@@ -1,50 +1,47 @@
 import 'dotenv/config';
 
-function numberEnv(name, fallback) {
-  const raw = process.env[name];
-  if (raw === undefined || raw === '') return fallback;
-  const n = Number(raw);
-  if (!Number.isFinite(n)) throw new Error(`${name} must be a number`);
-  return n;
+function bool(v, fallback = false) {
+  if (v === undefined || v === '') return fallback;
+  return String(v).toLowerCase() === 'true';
 }
 
-function boolEnv(name, fallback) {
-  const raw = process.env[name];
-  if (raw === undefined || raw === '') return fallback;
-  return ['1', 'true', 'yes', 'y'].includes(String(raw).toLowerCase());
+function num(v, fallback) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
 }
 
-function listEnv(name, fallback = []) {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  return raw.split(',').map((x) => x.trim()).filter(Boolean);
+function list(v) {
+  return String(v || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function proxyList() {
+  const servers = list(process.env.PROXY_SERVERS || process.env.PROXY_SERVER);
+  return servers.map(server => ({
+    server,
+    username: process.env.PROXY_USERNAME || undefined,
+    password: process.env.PROXY_PASSWORD || undefined
+  }));
 }
 
 export const config = {
-  apiKey: process.env.SPORTSGAMEODDS_API_KEY,
-  discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL,
-  minOddsDiff: numberEnv('MIN_ODDS_DIFF', 300),
-  scanIntervalMinutes: numberEnv('SCAN_INTERVAL_MINUTES', 5),
-  leagueIds: listEnv('LEAGUE_IDS', ['INTERNATIONAL_SOCCER']),
-  eventLimit: numberEnv('EVENT_LIMIT', 50),
-  includeAltLines: boolEnv('INCLUDE_ALT_LINES', true),
-  bookmakerIds: listEnv('BOOKMAKER_IDS', []),
-  targetStats: new Set(listEnv('TARGET_STATS', [
-    'offsides',
-    'shots',
-    'shots_onGoal',
-    'assists',
-    'passes_attempted',
-    'tackles'
-  ])),
-  finalized: process.env.FINALIZED ?? 'false'
+  discordWebhookUrl: process.env.DISCORD_WEBHOOK_URL || '',
+  minOddsDiff: num(process.env.MIN_ODDS_DIFF, 300),
+  scanIntervalMinutes: num(process.env.SCAN_INTERVAL_MINUTES, 5),
+  headless: bool(process.env.HEADLESS, true),
+  debug: bool(process.env.DEBUG_SCRAPE, false),
+  autoNavigate: bool(process.env.AUTO_NAVIGATE, true),
+  maxEventsPerBook: num(process.env.MAX_EVENTS_PER_BOOK, 8),
+  books: list(process.env.BOOKS || 'draftkings,fanatics,fanduel'),
+  urls: {
+    draftkings: list(process.env.DRAFTKINGS_URLS),
+    fanatics: list(process.env.FANATICS_URLS),
+    fanduel: list(process.env.FANDUEL_URLS),
+    betmgm: list(process.env.BETMGM_URLS),
+    caesars: list(process.env.CAESARS_URLS),
+    espnbet: list(process.env.ESPNBET_URLS)
+  },
+  proxies: proxyList()
 };
-
-export function validateConfig() {
-  const missing = [];
-  if (!config.apiKey) missing.push('SPORTSGAMEODDS_API_KEY');
-  if (!config.discordWebhookUrl) missing.push('DISCORD_WEBHOOK_URL');
-  if (missing.length) {
-    throw new Error(`Missing required env vars: ${missing.join(', ')}`);
-  }
-}

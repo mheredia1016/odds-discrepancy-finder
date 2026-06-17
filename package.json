@@ -1,17 +1,17 @@
 {
-  "name": "sgo-odds-diff-bot",
+  "name": "soccer-props-scraper-bot",
   "version": "1.0.0",
-  "description": "SportsGameOdds odds difference Discord alert bot",
+  "description": "Compares soccer player prop odds across sportsbook pages and posts Discord alerts.",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "scan": "node src/index.js --once"
-  },
-  "engines": {
-    "node": ">=18"
+    "scan": "node src/index.js --once",
+    "debug": "DEBUG_SCRAPE=true node src/index.js --once"
   },
   "dependencies": {
-    "dotenv": "^16.4.7"
-  }
+    "dotenv": "^16.4.7",
+    "playwright": "^1.49.1"
+  },
+  "devDependencies": {}
 }
