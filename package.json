@@ -1,17 +1,12 @@
 {
   "name": "odds-api-soccer-diff-bot",
-  "version": "1.0.0",
-  "description": "Soccer odds difference scanner using The Odds API and Discord alerts.",
-  "main": "src/index.js",
-  "type": "commonjs",
+  "version": "1.1.0",
+  "type": "module",
   "scripts": {
-    "start": "node src/index.js",
-    "scan": "node src/index.js --once"
+    "start": "node src/index.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=18"
   },
-  "dependencies": {
-    "dotenv": "^16.4.7"
-  }
+  "dependencies": {}
 }

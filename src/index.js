@@ -1,73 +1,74 @@
-const config = require('./config');
-const { getActiveSoccerSports, getOddsForSport } = require('./oddsApi');
-const { findAlerts, alertId } = require('./compare');
-const { buildMessage, postDiscord } = require('./discord');
-const { loadSeen, saveSeen } = require('./seen');
+import { config } from './config.js';
+import { fetchEvents, fetchEventOdds } from './oddsApi.js';
+import { compareEvent } from './compare.js';
+import { postAlert, alertSummary } from './discord.js';
 
-function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+const seen = new Set();
 
-async function resolveSports() {
-  if (config.sportKeysRaw.trim().toUpperCase() === 'AUTO') {
-    const sports = await getActiveSoccerSports(config.apiKey);
-    console.log(`AUTO soccer sports: ${sports.join(', ') || 'none'}`);
-    return sports;
-  }
-  return config.sportKeys;
+function chunks(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
 }
 
-async function scanOnce() {
-  if (!config.apiKey) throw new Error('Missing ODDS_API_KEY');
+function alertKey(alert) {
+  return [alert.eventId, alert.marketKey, alert.player, alert.line, alert.best.bookKey, alert.best.price, alert.lowest.bookKey, alert.lowest.price].join('|');
+}
 
-  const sports = await resolveSports();
-  console.log(`Scanning soccer sports: ${sports.join(', ')}`);
-  console.log(`Markets: ${config.markets.join(', ')} | Regions: ${config.regions} | Bookmakers: ${config.bookmakers.join(', ') || 'all in region'}`);
+async function scan() {
+  if (!config.oddsApiKey) throw new Error('Missing ODDS_API_KEY');
 
-  const allEvents = [];
-  for (const sportKey of sports) {
+  console.log(`Scanning sports: ${config.sportKeys.join(', ')}`);
+  console.log(`Markets: ${config.markets.join(', ')}`);
+  console.log(`Min diff: ${config.minOddsDiff}, Max odds: ${config.maxOdds}, Min books: ${config.minBookCount}`);
+
+  let totalEvents = 0;
+  let totalAlerts = 0;
+  let posted = 0;
+
+  for (const sportKey of config.sportKeys) {
     try {
-      const events = await getOddsForSport(sportKey, config);
-      console.log(`${sportKey}: loaded ${events.length} events`);
-      allEvents.push(...events.map(e => ({ ...e, sport_key: sportKey })));
-      await sleep(250);
+      const events = await fetchEvents(sportKey);
+      totalEvents += events.length;
+      console.log(`${sportKey}: ${events.length} events found`);
+
+      for (const event of events) {
+        for (const marketChunk of chunks(config.markets, config.eventMarketChunkSize)) {
+          try {
+            const odds = await fetchEventOdds(sportKey, event.id, marketChunk);
+            const alerts = compareEvent(odds);
+            if (alerts.length) console.log(`${event.away_team} @ ${event.home_team}: ${alerts.length} alerts from ${marketChunk.join(',')}`);
+            totalAlerts += alerts.length;
+
+            for (const alert of alerts) {
+              const key = alertKey(alert);
+              if (seen.has(key)) continue;
+              seen.add(key);
+              console.log(alertSummary(alert));
+              await postAlert(alert);
+              posted++;
+              await new Promise(r => setTimeout(r, 500));
+            }
+          } catch (err) {
+            console.log(`${sportKey} ${event.id} markets ${marketChunk.join(',')}: failed - ${err.message}`);
+          }
+        }
+      }
     } catch (err) {
-      console.error(`${sportKey}: failed - ${err.message}`);
+      console.log(`${sportKey}: failed - ${err.message}`);
     }
   }
 
-  console.log(`Total events loaded: ${allEvents.length}`);
-  const alerts = findAlerts(allEvents, config.minOddsDiff);
-  console.log(`Alerts found: ${alerts.length}`);
-
-  const seen = loadSeen();
-  let posted = 0;
-
-  for (const alert of alerts.slice(0, 20)) {
-    const id = alertId(alert);
-    if (seen.has(id)) continue;
-    await postDiscord(config.discordWebhookUrl, buildMessage(alert));
-    seen.add(id);
-    posted += 1;
-    await sleep(500);
-  }
-
-  if (posted === 0 && config.postNoAlerts) {
-    await postDiscord(config.discordWebhookUrl, { content: `No new soccer odds differences >= ${config.minOddsDiff}. Events scanned: ${allEvents.length}` });
-  }
-
-  saveSeen(seen);
+  console.log(`Total events loaded: ${totalEvents}`);
+  console.log(`Alerts found: ${totalAlerts}`);
   console.log(`New alerts posted: ${posted}`);
 }
 
 async function main() {
-  const once = process.argv.includes('--once');
-  await scanOnce();
-  if (once) return;
-
-  const intervalMs = config.scanIntervalMinutes * 60 * 1000;
+  await scan();
+  const ms = config.scanIntervalMinutes * 60 * 1000;
   console.log(`Running every ${config.scanIntervalMinutes} minutes`);
-  setInterval(() => {
-    scanOnce().catch(err => console.error(err));
-  }, intervalMs);
+  setInterval(() => scan().catch(err => console.error(err)), ms);
 }
 
 main().catch(err => {

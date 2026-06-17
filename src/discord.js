@@ -1,51 +1,47 @@
-function fmtOdds(n) {
-  return n > 0 ? `+${n}` : String(n);
-}
+import { config } from './config.js';
+import { formatAmerican, formatTime, marketLabel } from './normalize.js';
 
-function fmtDate(iso) {
-  try {
-    return new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Chicago',
-      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
-    }).format(new Date(iso));
-  } catch {
-    return iso;
+export async function postAlert(alert) {
+  if (!config.discordWebhookUrl) {
+    console.log('No DISCORD_WEBHOOK_URL set. Alert:', alertSummary(alert));
+    return;
   }
-}
 
-function buildMessage(alert) {
-  const books = alert.prices.slice(0, 8).map(p => `• ${p.bookTitle}: **${fmtOdds(p.price)}**`).join('\n');
-  return {
+  const payload = {
     embeds: [{
       title: `🚨 Soccer Odds Difference +${alert.diff}`,
-      description: `**${alert.awayTeam} @ ${alert.homeTeam}**\n${fmtDate(alert.commenceTime)} CT`,
+      description: `**${alert.awayTeam} @ ${alert.homeTeam}**\n${formatTime(alert.commenceTime)}`,
+      color: 15158332,
       fields: [
-        { name: 'Market', value: `${alert.market} — **${alert.label}**`, inline: false },
-        { name: 'Best', value: `${alert.best.bookTitle} **${fmtOdds(alert.best.price)}**`, inline: true },
-        { name: 'Lowest', value: `${alert.worst.bookTitle} **${fmtOdds(alert.worst.price)}**`, inline: true },
-        { name: 'Books', value: books || 'No books', inline: false }
+        { name: 'Player', value: alert.player || 'Unknown', inline: true },
+        { name: 'Market', value: marketLabel(alert.marketKey), inline: true },
+        { name: 'Line', value: alert.line || 'N/A', inline: true },
+        { name: 'Best', value: `**${alert.best.bookTitle} ${formatAmerican(alert.best.price)}**`, inline: true },
+        { name: 'Lowest', value: `${alert.lowest.bookTitle} ${formatAmerican(alert.lowest.price)}`, inline: true },
+        { name: 'Difference', value: `+${alert.diff}`, inline: true },
+        { name: 'Books', value: alert.prices.map(p => `• ${p.bookTitle}: ${formatAmerican(p.price)}`).join('\n').slice(0, 1000) }
       ],
       timestamp: new Date().toISOString()
     }]
   };
-}
 
-async function postDiscord(webhookUrl, payload) {
-  if (!webhookUrl) {
-    console.log('DISCORD_WEBHOOK_URL missing; skipping Discord post');
+  if (config.dryRun) {
+    console.log('DRY_RUN alert:', JSON.stringify(payload, null, 2));
     return;
   }
 
-  const res = await fetch(webhookUrl, {
+  const res = await fetch(config.discordWebhookUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload)
   });
 
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Discord webhook failed ${res.status}: ${text}`);
+    const text = await res.text();
+    throw new Error(`Discord ${res.status}: ${text}`);
   }
 }
 
-module.exports = { buildMessage, postDiscord };
+export function alertSummary(alert) {
+  return `${alert.awayTeam} @ ${alert.homeTeam} | ${alert.player} | ${marketLabel(alert.marketKey)} | ${alert.line} | ${alert.best.bookTitle} ${formatAmerican(alert.best.price)} vs ${alert.lowest.bookTitle} ${formatAmerican(alert.lowest.price)} (+${alert.diff})`;
+}

@@ -1,96 +1,64 @@
-function americanToNumber(price) {
-  const n = Number(price);
-  return Number.isFinite(n) ? n : null;
-}
+import { config } from './config.js';
+import { outcomeLine, outcomeName } from './normalize.js';
 
-function pointKey(outcome) {
-  return outcome.point === undefined || outcome.point === null ? '' : String(outcome.point);
-}
+export function compareEvent(eventOdds) {
+  const groups = new Map();
 
-function outcomeKey(event, market, outcome) {
-  return [
-    event.id,
-    market.key,
-    outcome.name || '',
-    pointKey(outcome)
-  ].join('|');
-}
+  for (const book of eventOdds.bookmakers || []) {
+    for (const market of book.markets || []) {
+      for (const outcome of market.outcomes || []) {
+        const price = Number(outcome.price);
+        if (!Number.isFinite(price)) continue;
+        if (Math.abs(price) > config.maxOdds) continue;
 
-function lineLabel(marketKey, outcome) {
-  if (marketKey === 'h2h') return outcome.name;
-  if (marketKey === 'totals') return `${outcome.name} ${outcome.point ?? ''}`.trim();
-  if (marketKey === 'spreads') return `${outcome.name} ${outcome.point > 0 ? '+' : ''}${outcome.point ?? ''}`.trim();
-  return `${outcome.name}${outcome.point === undefined ? '' : ` ${outcome.point}`}`;
-}
+        const player = outcomeName(outcome);
+        const line = outcomeLine(outcome);
+        const key = [eventOdds.id, market.key, player, line].join('|');
 
-function collectLines(events) {
-  const map = new Map();
-
-  for (const event of events) {
-    for (const bookmaker of event.bookmakers || []) {
-      for (const market of bookmaker.markets || []) {
-        for (const outcome of market.outcomes || []) {
-          const price = americanToNumber(outcome.price);
-          if (price === null) continue;
-
-          const key = outcomeKey(event, market, outcome);
-          if (!map.has(key)) {
-            map.set(key, {
-              eventId: event.id,
-              sportKey: event.sport_key,
-              homeTeam: event.home_team,
-              awayTeam: event.away_team,
-              commenceTime: event.commence_time,
-              market: market.key,
-              outcome: outcome.name,
-              point: outcome.point,
-              label: lineLabel(market.key, outcome),
-              prices: []
-            });
-          }
-
-          map.get(key).prices.push({
-            bookKey: bookmaker.key,
-            bookTitle: bookmaker.title || bookmaker.key,
-            price,
-            lastUpdate: bookmaker.last_update || market.last_update || null
+        if (!groups.has(key)) {
+          groups.set(key, {
+            eventId: eventOdds.id,
+            sportKey: eventOdds.sport_key,
+            sportTitle: eventOdds.sport_title,
+            homeTeam: eventOdds.home_team,
+            awayTeam: eventOdds.away_team,
+            commenceTime: eventOdds.commence_time,
+            marketKey: market.key,
+            player,
+            line,
+            prices: []
           });
         }
+
+        groups.get(key).prices.push({
+          bookKey: book.key,
+          bookTitle: book.title || book.key,
+          price,
+          lastUpdate: market.last_update
+        });
       }
     }
   }
 
-  return [...map.values()];
-}
-
-function findAlerts(events, minDiff) {
-  const lines = collectLines(events);
   const alerts = [];
 
-  for (const line of lines) {
+  for (const group of groups.values()) {
     const uniqueBooks = new Map();
-    for (const p of line.prices) {
-      const current = uniqueBooks.get(p.bookKey);
-      if (!current || p.price > current.price) uniqueBooks.set(p.bookKey, p);
+    for (const p of group.prices) {
+      const existing = uniqueBooks.get(p.bookKey);
+      if (!existing || p.price > existing.price) uniqueBooks.set(p.bookKey, p);
     }
-    const prices = [...uniqueBooks.values()];
-    if (prices.length < 2) continue;
+    group.prices = [...uniqueBooks.values()].sort((a, b) => b.price - a.price);
+    if (group.prices.length < config.minBookCount) continue;
 
-    prices.sort((a, b) => a.price - b.price);
-    const worst = prices[0];
-    const best = prices[prices.length - 1];
-    const diff = best.price - worst.price;
+    const best = group.prices[0];
+    const lowest = group.prices[group.prices.length - 1];
+    const diff = best.price - lowest.price;
+    if (diff < config.minOddsDiff) continue;
 
-    if (diff >= minDiff) {
-      alerts.push({ ...line, worst, best, diff, prices: prices.sort((a, b) => b.price - a.price) });
-    }
+    alerts.push({ ...group, best, lowest, diff });
   }
 
-  return alerts.sort((a, b) => b.diff - a.diff);
+  alerts.sort((a, b) => b.diff - a.diff);
+  return alerts;
 }
-
-function alertId(alert) {
-  return [alert.eventId, alert.market, alert.outcome, alert.point ?? '', alert.best.bookKey, alert.best.price, alert.worst.bookKey, alert.worst.price].join('|');
-}
-
-module.exports = { findAlerts, alertId };
