@@ -29,7 +29,11 @@ async function scan() {
     try {
       const data = await fetchLeagueEvents(leagueID, config);
       const events = Array.isArray(data) ? data : (data.events || data.data || []);
-      console.log(`${leagueID}: events ${events.length}`);
+      console.log(`${leagueId}: events ${events.data.length}`);
+
+console.log('=== FIRST EVENT ===');
+console.log(JSON.stringify(events.data?.[0], null, 2));
+process.exit(0);
       for (const event of events) {
         const rows = extractOddsRows(event, config.bookmakerIds);
         allRows.push(...rows);
