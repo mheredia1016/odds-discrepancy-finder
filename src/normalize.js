@@ -21,24 +21,37 @@ function fmtOdds(n) {
   return n > 0 ? `+${n}` : String(n);
 }
 
-function marketName(key = '') {
-  return String(key)
-    .replace(/^player_/, '')
-    .replace(/_/g, ' ')
+function titleCase(value = '') {
+  return String(value)
+    .replace(/[_-]/g, ' ')
     .replace(/\b\w/g, c => c.toUpperCase())
-    .replace('H 1', '1H')
-    .replace('H 2', '2H');
+    .replace(/\bMl\b/g, 'Moneyline')
+    .replace(/\bOu\b/g, 'Over/Under')
+    .replace(/\bSp\b/g, 'Spread')
+    .replace(/\bHr\b/g, 'HR')
+    .replace(/\bH 1\b/g, '1H')
+    .replace(/\bH 2\b/g, '2H');
+}
+
+function marketName(key = '') {
+  return titleCase(String(key).replace(/^player_/, ''));
+}
+
+function teamName(team) {
+  if (!team) return '';
+  if (typeof team === 'string') return team;
+  return team.names?.long || team.names?.medium || team.name || team.longName || team.shortName || '';
 }
 
 function eventName(event) {
-  const home = event.homeTeamName || event.home_team || event.homeTeam || event.home || event.teams?.home?.name;
-  const away = event.awayTeamName || event.away_team || event.awayTeam || event.away || event.teams?.away?.name;
+  const home = event.homeTeamName || event.home_team || event.homeTeam || teamName(event.home) || teamName(event.teams?.home);
+  const away = event.awayTeamName || event.away_team || event.awayTeam || teamName(event.away) || teamName(event.teams?.away);
   if (away && home) return `${away} @ ${home}`;
-  return event.name || event.eventName || event.shortName || event.id || 'Event';
+  return event.name || event.eventName || event.shortName || event.eventID || event.id || 'Event';
 }
 
 function eventStart(event) {
-  const t = event.startTime || event.commence_time || event.commenceTime || event.eventTime || event.scheduledTime;
+  const t = event.startTime || event.commence_time || event.commenceTime || event.eventTime || event.scheduledTime || event.status?.startsAt;
   if (!t) return '';
   try {
     return new Intl.DateTimeFormat('en-US', {
@@ -49,17 +62,19 @@ function eventStart(event) {
 }
 
 function isLiveEvent(event) {
+  if (typeof event.status === 'object' && event.status) return Boolean(event.status.live || event.status.started && !event.status.completed && !event.status.ended);
   const status = String(event.status || event.eventStatus || event.state || '').toLowerCase();
   return Boolean(event.isLive || event.live || status.includes('live') || status.includes('in_progress') || status.includes('in-progress'));
 }
 
 function playKeyParts(raw) {
-  const market = raw.marketID || raw.marketId || raw.market || raw.statID || raw.statId || raw.type || 'market';
-  const player = raw.playerName || raw.player || raw.participantName || raw.participant || raw.name || raw.entityName || '';
-  const side = raw.side || raw.selection || raw.outcomeName || raw.outcome || raw.betName || raw.label || '';
+  const market = raw.marketName || raw.marketID || raw.marketId || raw.market || raw.statID || raw.statId || raw.type || 'market';
+  const player = raw.playerName || raw.player || raw.participantName || raw.participant || raw.name || raw.entityName || raw.statEntityID || '';
+  const side = raw.side || raw.sideID || raw.selection || raw.outcomeName || raw.outcome || raw.betName || raw.label || '';
   const line = raw.line ?? raw.points ?? raw.handicap ?? raw.spread ?? raw.total ?? raw.value ?? '';
   const period = raw.periodID || raw.period || '';
-  return { market, player, side, line, period };
+  const statEntity = raw.statEntityID || '';
+  return { market, player, side, line, period, statEntity };
 }
 
 function clean(x) {
@@ -68,15 +83,16 @@ function clean(x) {
 
 function buildPlayKey(raw) {
   const p = playKeyParts(raw);
-  return [p.market, p.player, p.side, p.line, p.period].map(clean).join('|').toLowerCase();
+  return [p.market, p.player || p.statEntity, p.side, p.line, p.period].map(clean).join('|').toLowerCase();
 }
 
 function describePlay(raw) {
   const p = playKeyParts(raw);
   const bits = [];
-  if (p.player) bits.push(`Player: ${p.player}`);
+  if (p.player && !['home', 'away', 'all'].includes(String(p.player).toLowerCase())) bits.push(`Player: ${p.player}`);
   bits.push(`Market: ${marketName(p.market)}`);
-  if (p.side || p.line !== '') bits.push(`Line: ${[p.side, p.line].filter(x => x !== '' && x != null).join(' ')}`);
+  const lineText = [p.side, p.line].filter(x => x !== '' && x != null).join(' ');
+  if (lineText) bits.push(`Line: ${lineText}`);
   if (p.period) bits.push(`Period: ${p.period}`);
   return bits.join('\n');
 }

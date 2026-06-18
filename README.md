@@ -14,7 +14,7 @@ LIVE_WEBHOOK_URL=https://discord.com/api/webhooks/...
 
 ```env
 LEAGUE_IDS=MLB,NBA,NFL,NHL,WNBA,UFC,EPL,MLS,INTERNATIONAL_SOCCER
-BOOKMAKER_IDS=fanduel,draftkings,hardrockbet,bet365,thescorebet,fanatics,betmgm
+BOOKMAKER_IDS=fanduel,draftkings,hardrockbet,thescorebet,fanatics,betmgm
 
 MIN_ODDS_DIFF=500
 LIVE_MIN_ODDS_DIFF=750
