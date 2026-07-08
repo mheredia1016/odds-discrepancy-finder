@@ -32,12 +32,14 @@ async function fetchLeagueEvents(leagueID, config) {
   const params = {
     leagueID,
     oddsAvailable: true,
+    limit: config.eventLimit || 10,
     includeAltLines: config.includeAltLines,
     includeLive: config.includeLive,
     includeOdds: true,
     includeDeeplinks: config.includeDeeplinks,
     bookmakerID: config.bookmakerIds,
   };
+
   return sgoGet('/events', params, config.apiKey);
 }
 
