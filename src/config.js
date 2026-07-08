@@ -37,4 +37,5 @@ module.exports = {
   includeDeeplinks: bool('INCLUDE_DEEPLINKS', true),
   topPregameAlertsPerScan: num('TOP_PREGAME_ALERTS_PER_SCAN', 20),
   topLiveAlertsPerScan: num('TOP_LIVE_ALERTS_PER_SCAN', 10),
+  eventLimit: Number(process.env.EVENT_LIMIT || 10),
 };
